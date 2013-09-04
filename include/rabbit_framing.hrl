@@ -103,6 +103,9 @@
 -record('basic.recover', {requeue = false}).
 -record('basic.recover_ok', {}).
 -record('basic.nack', {delivery_tag = 0, multiple = false, requeue = true}).
+-record('basic.credit', {consumer_tag = <<"">>, credit, drain}).
+-record('basic.credit_ok', {available}).
+-record('basic.credit_drained', {consumer_tag = <<"">>, credit_drained}).
 -record('tx.select', {}).
 -record('tx.select_ok', {}).
 -record('tx.commit', {}).
