@@ -10,8 +10,8 @@
 %%
 %% The Original Code is RabbitMQ.
 %%
-%% The Initial Developer of the Original Code is VMware, Inc.
-%% Copyright (c) 2007-2013 VMware, Inc.  All rights reserved.
+%% The Initial Developer of the Original Code is GoPivotal, Inc.
+%% Copyright (c) 2007-2013 GoPivotal, Inc.  All rights reserved.
 %%
 
 -module(rabbit_misc).
@@ -142,9 +142,11 @@
                when is_subtype(K, atom())).
 -spec(r_arg/4 ::
         (rabbit_types:vhost() | rabbit_types:r(atom()), K,
-         rabbit_framing:amqp_table(), binary())
-        -> undefined | rabbit_types:r(K)
-               when is_subtype(K, atom())).
+         rabbit_framing:amqp_table(), binary()) ->
+                      undefined |
+                      rabbit_types:error(
+                        {invalid_type, rabbit_framing:amqp_field_type()}) |
+                      rabbit_types:r(K) when is_subtype(K, atom())).
 -spec(rs/1 :: (rabbit_types:r(atom())) -> string()).
 -spec(enable_cover/0 :: () -> ok_or_error()).
 -spec(start_cover/1 :: ([{string(), string()} | string()]) -> 'ok').
@@ -370,7 +372,8 @@ r_arg(#resource{virtual_host = VHostPath}, Kind, Table, Key) ->
 r_arg(VHostPath, Kind, Table, Key) ->
     case table_lookup(Table, Key) of
         {longstr, NameBin} -> r(VHostPath, Kind, NameBin);
-        undefined          -> undefined
+        undefined          -> undefined;
+        {Type, _}          -> {error, {invalid_type, Type}}
     end.
 
 rs(#resource{virtual_host = VHostPath, kind = Kind, name = Name}) ->
@@ -900,13 +903,8 @@ ntoab(IP) ->
         _ -> "[" ++ Str ++ "]"
     end.
 
-is_process_alive(Pid) when node(Pid) =:= node() ->
-    erlang:is_process_alive(Pid);
 is_process_alive(Pid) ->
-    case rpc:call(node(Pid), erlang, is_process_alive, [Pid]) of
-        true -> true;
-        _    -> false
-    end.
+    rpc:call(node(Pid), erlang, is_process_alive, [Pid]) =:= true.
 
 pget(K, P) -> proplists:get_value(K, P).
 pget(K, P, D) -> proplists:get_value(K, P, D).
@@ -973,10 +971,18 @@ receive_multi_call([{Mref, Pid} | MonitorPids], Good, Bad) ->
     end.
 
 os_cmd(Command) ->
-    Exec = hd(string:tokens(Command, " ")),
-    case os:find_executable(Exec) of
-        false -> throw({command_not_found, Exec});
-        _     -> os:cmd(Command)
+    case os:type() of
+        {win32, _} ->
+            %% Clink workaround; see
+            %% http://code.google.com/p/clink/issues/detail?id=141
+            os:cmd(" " ++ Command);
+        _ ->
+            %% Don't just return "/bin/sh: <cmd>: not found" if not found
+            Exec = hd(string:tokens(Command, " ")),
+            case os:find_executable(Exec) of
+                false -> throw({command_not_found, Exec});
+                _     -> os:cmd(Command)
+            end
     end.
 
 gb_sets_difference(S1, S2) ->

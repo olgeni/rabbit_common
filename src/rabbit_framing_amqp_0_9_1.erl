@@ -12,8 +12,8 @@
 %%
 %%  The Original Code is RabbitMQ.
 %%
-%%  The Initial Developer of the Original Code is VMware, Inc.
-%%  Copyright (c) 2007-2013 VMware, Inc.  All rights reserved.
+%%  The Initial Developer of the Original Code is GoPivotal, Inc.
+%%  Copyright (c) 2007-2013 GoPivotal, Inc.  All rights reserved.
 %%
 -module(rabbit_framing_amqp_0_9_1).
 -include("rabbit_framing.hrl").
