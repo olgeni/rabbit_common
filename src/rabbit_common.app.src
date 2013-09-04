@@ -1,6 +1,6 @@
 {application,rabbit_common,
              [{description,"RabbitMQ Common Libraries"},
-              {vsn,"3.1.1"},
+              {vsn,"3.1.2"},
               {modules,[app_utils,pmon,gen_server2,mirrored_supervisor,
                         priority_queue,rabbit_backing_queue,rabbit_basic,
                         rabbit_binary_generator,rabbit_binary_parser,
