@@ -57,6 +57,8 @@
 -record('connection.open_ok', {known_hosts = <<"">>}).
 -record('connection.close', {reply_code, reply_text = <<"">>, class_id, method_id}).
 -record('connection.close_ok', {}).
+-record('connection.blocked', {reason = <<"">>}).
+-record('connection.unblocked', {}).
 -record('connection.redirect', {host, known_hosts = <<"">>}).
 -record('channel.open', {out_of_band = <<"">>}).
 -record('channel.open_ok', {channel_id = <<"">>}).
