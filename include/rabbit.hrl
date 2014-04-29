@@ -86,7 +86,7 @@
 
 %%----------------------------------------------------------------------------
 
--define(COPYRIGHT_MESSAGE, "Copyright (C) 2007-2013 GoPivotal, Inc.").
+-define(COPYRIGHT_MESSAGE, "Copyright (C) 2007-2014 GoPivotal, Inc.").
 -define(INFORMATION_MESSAGE, "Licensed under the MPL.  See http://www.rabbitmq.com/").
 -define(ERTS_MINIMUM, "5.6.3").
 
@@ -125,6 +125,6 @@
 %% 4) Amount to decrease 2) every time we descend while truncating.
 %%
 %% Whole thing feeds into truncate:log_event/2.
--define(LOG_TRUNC, {2000, 100, 100, 7}).
+-define(LOG_TRUNC, {2000, 100, 50, 5}).
 
 -define(store_proc_name(N), rabbit_misc:store_proc_name(?MODULE, N)).
