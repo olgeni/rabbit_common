@@ -330,8 +330,8 @@ assert_args_equivalence1(Orig, New, Name, Key) ->
                  true  -> ok;
                  false -> assert_field_equivalence(OrigVal, NewVal, Name, Key)
             end;
-        {_, _} ->
-            assert_field_equivalence(Orig, New, Name, Key)
+        {OrigTypeVal, NewTypeVal} ->
+            assert_field_equivalence(OrigTypeVal, NewTypeVal, Name, Key)
     end.
 
 assert_field_equivalence(_Orig, _Orig, _Name, _Key) ->
@@ -349,13 +349,13 @@ val(undefined) ->
 val({Type, Value}) ->
     ValFmt = case is_binary(Value) of
                  true  -> "~s";
-                 false -> "~w"
+                 false -> "~p"
              end,
     format("the value '" ++ ValFmt ++ "' of type '~s'", [Value, Type]);
 val(Value) ->
     format(case is_binary(Value) of
                true  -> "'~s'";
-               false -> "'~w'"
+               false -> "'~p'"
            end, [Value]).
 
 %% Normally we'd call mnesia:dirty_read/1 here, but that is quite
