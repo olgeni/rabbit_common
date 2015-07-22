@@ -11,7 +11,7 @@
 %% The Original Code is RabbitMQ.
 %%
 %% The Initial Developer of the Original Code is GoPivotal, Inc.
-%% Copyright (c) 2007-2014 GoPivotal, Inc.  All rights reserved.
+%% Copyright (c) 2007-2015 Pivotal Software, Inc.  All rights reserved.
 %%
 
 -module(rabbit_reader).
@@ -196,7 +196,17 @@ socket_error(Reason) when is_atom(Reason) ->
     log(error, "Error on AMQP connection ~p: ~s~n",
         [self(), rabbit_misc:format_inet_error(Reason)]);
 socket_error(Reason) ->
-    log(error, "Error on AMQP connection ~p:~n~p~n", [self(), Reason]).
+    Level =
+        case Reason of
+            {ssl_upgrade_error, closed} ->
+                %% The socket was closed while upgrading to SSL.
+                %% This is presumably a TCP healthcheck, so don't log
+                %% it unless specified otherwise.
+                debug;
+            _ ->
+                error
+        end,
+    log(Level, "Error on AMQP connection ~p:~n~p~n", [self(), Reason]).
 
 inet_op(F) -> rabbit_misc:throw_on_error(inet_error, F).
 
@@ -263,12 +273,8 @@ start_connection(Parent, HelperSup, Deb, Sock, SockTransform) ->
                                           handshake, 8)]}),
         log(info, "closing AMQP connection ~p (~s)~n", [self(), Name])
     catch
-        Ex -> log(case Ex of
-                      connection_closed_with_no_data_received -> debug;
-                      connection_closed_abruptly              -> warning;
-                      _                                       -> error
-                  end, "closing AMQP connection ~p (~s):~n~p~n",
-                  [self(), Name, Ex])
+        Ex ->
+          log_connection_exception(Name, Ex)
     after
         %% We don't call gen_tcp:close/1 here since it waits for
         %% pending output to be sent, which results in unnecessary
@@ -282,6 +288,22 @@ start_connection(Parent, HelperSup, Deb, Sock, SockTransform) ->
         rabbit_event:notify(connection_closed, [{pid, self()}])
     end,
     done.
+
+log_connection_exception(Name, Ex) ->
+  Severity = case Ex of
+      connection_closed_with_no_data_received -> debug;
+      connection_closed_abruptly              -> warning;
+      _                                       -> error
+    end,
+  log_connection_exception(Severity, Name, Ex).
+
+log_connection_exception(Severity, Name, {heartbeat_timeout, TimeoutSec}) ->
+  %% Long line to avoid extra spaces and line breaks in log
+  log(Severity, "closing AMQP connection ~p (~s):~nMissed heartbeats from client, timeout: ~ps~n",
+    [self(), Name, TimeoutSec]);
+log_connection_exception(Severity, Name, Ex) ->
+  log(Severity, "closing AMQP connection ~p (~s):~n~p~n",
+    [self(), Name, Ex]).
 
 run({M, F, A}) ->
     try apply(M, F, A)
@@ -345,6 +367,8 @@ mainloop(Deb, Buf, BufLen, State = #v1{sock = Sock,
                      State#v1{pending_recv = false});
         closed when State#v1.connection_state =:= closed ->
             ok;
+        closed when CS =:= pre_init andalso Buf =:= [] ->
+            stop(tcp_healthcheck, State);
         closed ->
             stop(closed, State);
         {error, Reason} ->
@@ -359,7 +383,7 @@ mainloop(Deb, Buf, BufLen, State = #v1{sock = Sock,
             end
     end.
 
-stop(closed, #v1{connection_state = pre_init} = State) ->
+stop(tcp_healthcheck, State) ->
     %% The connection was closed before any packet was received. It's
     %% probably a load-balancer healthcheck: don't consider this a
     %% failure.
@@ -421,9 +445,10 @@ handle_other(handshake_timeout, State) ->
     throw({handshake_timeout, State#v1.callback});
 handle_other(heartbeat_timeout, State = #v1{connection_state = closed}) ->
     State;
-handle_other(heartbeat_timeout, State = #v1{connection_state = S}) ->
+handle_other(heartbeat_timeout, 
+             State = #v1{connection = #connection{timeout_sec = T}}) ->
     maybe_emit_stats(State),
-    throw({heartbeat_timeout, S});
+    throw({heartbeat_timeout, T});
 handle_other({'$gen_call', From, {shutdown, Explanation}}, State) ->
     {ForceTermination, NewState} = terminate(Explanation, State),
     gen_server:reply(From, ok),
