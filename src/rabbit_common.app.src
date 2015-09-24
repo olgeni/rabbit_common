@@ -1,6 +1,6 @@
 {application,rabbit_common,
              [{description,"RabbitMQ Common Libraries"},
-              {vsn,"3.5.4"},
+              {vsn,"3.5.5"},
               {modules,[app_utils,credit_flow,pmon,gen_server2,
                         mirrored_supervisor,mochijson2,priority_queue,
                         rabbit_backing_queue,rabbit_basic,
@@ -15,7 +15,8 @@
                         rabbit_networking,rabbit_nodes,
                         rabbit_policy_validator,rabbit_reader,rabbit_writer,
                         rabbit_event,rabbit_queue_collector,
-                        rabbit_queue_decorator,rabbit_amqqueue,supervisor2]},
+                        rabbit_queue_decorator,rabbit_amqqueue,ssl_compat,
+                        supervisor2,time_compat]},
               {registered,[]},
               {env,[]},
               {applications,[kernel,stdlib]}]}.
