@@ -23,9 +23,18 @@
 -record(auth_user, {username,
                     tags,
                     impl}).
+%% Passed to authz backends.
+-record(authz_socket_info, {sockname, peername}).
 
 %% Implementation for the internal auth backend
--record(internal_user, {username, password_hash, tags}).
+-record(internal_user, {
+    username,
+    password_hash,
+    tags,
+    %% password hashing implementation module,
+    %% typically rabbit_password_hashing_* but can
+    %% come from a plugin
+    hashing_algorithm}).
 -record(permission, {configure, write, read}).
 -record(user_vhost, {username, virtual_host}).
 -record(user_permission, {user_vhost, permission}).
@@ -42,7 +51,13 @@
          payload_fragments_rev %% list of binaries, in reverse order (!)
          }).
 
--record(resource, {virtual_host, kind, name}).
+-record(resource, {
+    virtual_host,
+    %% exchange, queue, ...
+    kind,
+    %% name as a binary
+    name
+}).
 
 %% fields described as 'transient' here are cleared when writing to
 %% rabbit_durable_<thing>
@@ -87,7 +102,6 @@
 -record(basic_message, {exchange_name, routing_keys = [], content, id,
                         is_persistent}).
 
--record(ssl_socket, {tcp, ssl}).
 -record(delivery, {mandatory, confirm, sender, message, msg_seq_no, flow}).
 -record(amqp_error, {name, explanation = "", method = none}).
 
@@ -106,7 +120,8 @@
 
 -define(COPYRIGHT_MESSAGE, "Copyright (C) 2007-2015 Pivotal Software, Inc.").
 -define(INFORMATION_MESSAGE, "Licensed under the MPL.  See http://www.rabbitmq.com/").
--define(ERTS_MINIMUM, "5.6.3").
+-define(OTP_MINIMUM, "R16B03").
+-define(ERTS_MINIMUM, "5.10.4").
 
 %% EMPTY_FRAME_SIZE, 8 = 1 + 2 + 4 + 1
 %%  - 1 byte of frame type

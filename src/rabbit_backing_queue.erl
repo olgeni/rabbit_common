@@ -22,7 +22,7 @@
                     messages_unacknowledged_ram, messages_persistent,
                     message_bytes, message_bytes_ready,
                     message_bytes_unacknowledged, message_bytes_ram,
-                    message_bytes_persistent,
+                    message_bytes_persistent, head_message_timestamp,
                     disk_reads, disk_writes, backing_queue_status]).
 
 -ifdef(use_specs).
@@ -33,6 +33,10 @@
 
 -type(flow() :: 'flow' | 'noflow').
 -type(msg_ids() :: [rabbit_types:msg_id()]).
+-type(publish() :: {rabbit_types:basic_message(),
+                    rabbit_types:message_properties(), boolean()}).
+-type(delivered_publish() :: {rabbit_types:basic_message(),
+                              rabbit_types:message_properties()}).
 -type(fetch_result(Ack) ::
         ('empty' | {rabbit_types:basic_message(), boolean(), Ack})).
 -type(drop_result(Ack) ::
@@ -46,6 +50,8 @@
 
 -type(msg_fun(A) :: fun ((rabbit_types:basic_message(), ack(), A) -> A)).
 -type(msg_pred() :: fun ((rabbit_types:message_properties()) -> boolean())).
+
+-type(queue_mode() :: atom()).
 
 -spec(info_keys/0 :: () -> rabbit_types:info_keys()).
 
@@ -104,6 +110,9 @@
                   rabbit_types:message_properties(), boolean(), pid(), flow(),
                   state()) -> state().
 
+%% Like publish/6 but for batches of publishes.
+-callback batch_publish([publish()], pid(), flow(), state()) -> state().
+
 %% Called for messages which have already been passed straight
 %% out to a client. The queue will be empty for these calls
 %% (i.e. saves the round trip through the backing queue).
@@ -111,6 +120,11 @@
                             rabbit_types:message_properties(), pid(), flow(),
                             state())
                            -> {ack(), state()}.
+
+%% Like publish_delivered/5 but for batches of publishes.
+-callback batch_publish_delivered([delivered_publish()], pid(), flow(),
+                                  state())
+                                 -> {[ack()], state()}.
 
 %% Called to inform the BQ about messages which have reached the
 %% queue, but are not going to be further passed to BQ.
@@ -246,6 +260,12 @@
 -callback is_duplicate(rabbit_types:basic_message(), state())
                       -> {boolean(), state()}.
 
+-callback set_queue_mode(queue_mode(), state()) -> state().
+
+-callback zip_msgs_and_acks(delivered_publish(),
+                            [ack()], Acc, state())
+                           -> Acc.
+
 -else.
 
 -export([behaviour_info/1]).
@@ -253,14 +273,16 @@
 behaviour_info(callbacks) ->
     [{start, 1}, {stop, 0}, {init, 3}, {terminate, 2},
      {delete_and_terminate, 2}, {delete_crashed, 1}, {purge, 1},
-     {purge_acks, 1}, {publish, 6},
-     {publish_delivered, 5}, {discard, 4}, {drain_confirmed, 1},
+     {purge_acks, 1}, {publish, 6}, {publish_delivered, 5},
+     {batch_publish, 4}, {batch_publish_delivered, 4},
+     {discard, 4}, {drain_confirmed, 1},
      {dropwhile, 2}, {fetchwhile, 4}, {fetch, 2},
      {drop, 2}, {ack, 2}, {requeue, 2}, {ackfold, 4}, {fold, 3}, {len, 1},
      {is_empty, 1}, {depth, 1}, {set_ram_duration_target, 2},
      {ram_duration, 1}, {needs_timeout, 1}, {timeout, 1},
      {handle_pre_hibernate, 1}, {resume, 1}, {msg_rates, 1},
-     {info, 2}, {invoke, 3}, {is_duplicate, 2}] ;
+     {info, 2}, {invoke, 3}, {is_duplicate, 2}, {set_queue_mode, 2},
+     {zip_msgs_and_acks, 4}];
 behaviour_info(_Other) ->
     undefined.
 

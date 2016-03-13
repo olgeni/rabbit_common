@@ -103,6 +103,26 @@
 %% flow".
 -define(STATE_CHANGE_INTERVAL, 1000000).
 
+-ifdef(CREDIT_FLOW_TRACING).
+-define(TRACE_BLOCKED(SELF, FROM), rabbit_event:notify(credit_flow_blocked,
+                                     [{process, SELF},
+                                      {process_info, erlang:process_info(SELF)},
+                                      {from, FROM},
+                                      {from_info, erlang:process_info(FROM)},
+                                      {timestamp,
+                                       time_compat:os_system_time(
+                                         milliseconds)}])).
+-define(TRACE_UNBLOCKED(SELF, FROM), rabbit_event:notify(credit_flow_unblocked,
+                                       [{process, SELF},
+                                        {from, FROM},
+                                        {timestamp,
+                                         time_compat:os_system_time(
+                                           milliseconds)}])).
+-else.
+-define(TRACE_BLOCKED(SELF, FROM), ok).
+-define(TRACE_UNBLOCKED(SELF, FROM), ok).
+-endif.
+
 %%----------------------------------------------------------------------------
 
 %% There are two "flows" here; of messages and of credit, going in
@@ -151,7 +171,10 @@ state() -> case blocked() of
                true  -> flow;
                false -> case get(credit_blocked_at) of
                             undefined -> running;
-                            B         -> Diff = timer:now_diff(erlang:now(), B),
+                            B         -> Now = time_compat:monotonic_time(),
+                                         Diff = time_compat:convert_time_unit(Now - B,
+                                                                              native,
+                                                                              micro_seconds),
                                          case Diff < ?STATE_CHANGE_INTERVAL of
                                              true  -> flow;
                                              false -> running
@@ -178,13 +201,15 @@ grant(To, Quantity) ->
     end.
 
 block(From) ->
+    ?TRACE_BLOCKED(self(), From),
     case blocked() of
-        false -> put(credit_blocked_at, erlang:now());
+        false -> put(credit_blocked_at, time_compat:monotonic_time());
         true  -> ok
     end,
     ?UPDATE(credit_blocked, [], Blocks, [From | Blocks]).
 
 unblock(From) ->
+    ?TRACE_UNBLOCKED(self(), From),
     ?UPDATE(credit_blocked, [], Blocks, Blocks -- [From]),
     case blocked() of
         false -> case erase(credit_deferred) of
