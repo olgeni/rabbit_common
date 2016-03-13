@@ -11,7 +11,7 @@
 %% The Original Code is RabbitMQ.
 %%
 %% The Initial Developer of the Original Code is GoPivotal, Inc.
-%% Copyright (c) 2007-2015 Pivotal Software, Inc.  All rights reserved.
+%% Copyright (c) 2007-2016 Pivotal Software, Inc.  All rights reserved.
 %%
 
 -module(rabbit_misc).
@@ -71,6 +71,8 @@
 -export([store_proc_name/1, store_proc_name/2]).
 -export([moving_average/4]).
 -export([get_env/3]).
+-export([get_channel_operation_timeout/0]).
+-export([random/1]).
 
 %% Horrible macro to use in guards
 -define(IS_BENIGN_EXIT(R),
@@ -259,6 +261,9 @@
 -spec(moving_average/4 :: (float(), float(), float(), float() | 'undefined')
                           -> float()).
 -spec(get_env/3 :: (atom(), atom(), term())  -> term()).
+-spec(get_channel_operation_timeout/0 :: () -> non_neg_integer()).
+-spec(random/1 :: (non_neg_integer()) -> non_neg_integer()).
+
 -endif.
 
 %%----------------------------------------------------------------------------
@@ -306,7 +311,11 @@ absent(#amqqueue{name = QueueName, pid = QPid, durable = true}, nodedown) ->
 
 absent(#amqqueue{name = QueueName}, crashed) ->
     protocol_error(not_found,
-                   "~s has crashed and failed to restart", [rs(QueueName)]).
+                   "~s has crashed and failed to restart", [rs(QueueName)]);
+
+absent(#amqqueue{name = QueueName}, timeout) ->
+    protocol_error(not_found,
+                   "failed to perform operation on ~s due to timeout", [rs(QueueName)]).
 
 type_class(byte)          -> int;
 type_class(short)         -> int;
@@ -651,18 +660,7 @@ format_many(List) ->
     lists:flatten([io_lib:format(F ++ "~n", A) || {F, A} <- List]).
 
 format_stderr(Fmt, Args) ->
-    case os:type() of
-        {unix, _} ->
-            Port = open_port({fd, 0, 2}, [out]),
-            port_command(Port, io_lib:format(Fmt, Args)),
-            port_close(Port);
-        {win32, _} ->
-            %% stderr on Windows is buffered and I can't figure out a
-            %% way to trigger a fflush(stderr) in Erlang. So rather
-            %% than risk losing output we write to stdout instead,
-            %% which appears to be unbuffered.
-            io:format(Fmt, Args)
-    end,
+    io:format(standard_error, Fmt, Args),
     ok.
 
 unfold(Fun, Init) ->
@@ -878,8 +876,20 @@ is_process_alive(Pid) ->
     lists:member(Node, [node() | nodes()]) andalso
         rpc:call(Node, erlang, is_process_alive, [Pid]) =:= true.
 
-pget(K, P) -> proplists:get_value(K, P).
-pget(K, P, D) -> proplists:get_value(K, P, D).
+pget(K, P) ->
+    case lists:keyfind(K, 1, P) of
+        {K, V} ->
+            V;
+        _ ->
+            undefined
+    end.
+pget(K, P, D) ->
+    case lists:keyfind(K, 1, P) of
+        {K, V} ->
+            V;
+        _ ->
+            D
+    end.
 
 pget_or_die(K, P) ->
     case proplists:get_value(K, P) of
@@ -1114,6 +1124,13 @@ get_env(Application, Key, Def) ->
         undefined -> Def
     end.
 
+get_channel_operation_timeout() ->
+    %% Default channel_operation_timeout set to net_ticktime + 10s to
+    %% give allowance for any down messages to be received first,
+    %% whenever it is used for cross-node calls with timeouts.
+    Default = (net_kernel:get_net_ticktime() + 10) * 1000,
+    application:get_env(rabbit, channel_operation_timeout, Default).
+
 moving_average(_Time, _HalfLife, Next, undefined) ->
     Next;
 %% We want the Weight to decrease as Time goes up (since Weight is the
@@ -1132,6 +1149,16 @@ moving_average(_Time, _HalfLife, Next, undefined) ->
 moving_average(Time,  HalfLife,  Next, Current) ->
     Weight = math:exp(Time * math:log(0.5) / HalfLife),
     Next * (1 - Weight) + Current * Weight.
+
+random(N) ->
+    case get(random_seed) of
+        undefined ->
+            random:seed(erlang:phash2([node()]),
+                        time_compat:monotonic_time(),
+                        time_compat:unique_integer());
+        _ -> ok
+    end,
+    random:uniform(N).
 
 %% -------------------------------------------------------------------------
 %% Begin copypasta from gen_server2.erl

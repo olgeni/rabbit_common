@@ -11,7 +11,7 @@
 %% The Original Code is RabbitMQ.
 %%
 %% The Initial Developer of the Original Code is GoPivotal, Inc.
-%% Copyright (c) 2007-2015 Pivotal Software, Inc.  All rights reserved.
+%% Copyright (c) 2007-2016 Pivotal Software, Inc.  All rights reserved.
 %%
 
 -module(rabbit_reader).
@@ -299,7 +299,8 @@ server_capabilities(rabbit_framing_amqp_0_9_1) ->
      {<<"connection.blocked">>,           bool, true},
      {<<"consumer_priorities">>,          bool, true},
      {<<"authentication_failure_close">>, bool, true},
-     {<<"per_consumer_qos">>,             bool, true}];
+     {<<"per_consumer_qos">>,             bool, true},
+     {<<"direct_reply_to">>,              bool, true}];
 server_capabilities(_) ->
     [].
 
@@ -745,7 +746,8 @@ wait_for_channel_termination(N, TimerRef,
                                          connection = #connection{
                                                          name  = ConnName,
                                                          user  = User,
-                                                         vhost = VHost}}) ->
+                                                         vhost = VHost},
+                                         sock = Sock}) ->
     receive
         {'DOWN', _MRef, process, ChPid, Reason} ->
             {Channel, State1} = channel_cleanup(ChPid, State),
@@ -762,6 +764,9 @@ wait_for_channel_termination(N, TimerRef,
                          CS, Channel, Reason]),
                     wait_for_channel_termination(N-1, TimerRef, State1)
             end;
+        {'EXIT', Sock, _Reason} ->
+            [channel_cleanup(ChPid, State) || ChPid <- all_channels()],
+            exit(normal);
         cancel_wait ->
             exit(channel_termination_timeout)
     end.
@@ -782,7 +787,10 @@ termination_kind(_)      -> uncontrolled.
 format_hard_error(#amqp_error{name = N, explanation = E, method = M}) ->
     io_lib:format("operation ~s caused a connection exception ~s: ~p", [M, N, E]);
 format_hard_error(Reason) ->
-    Reason.
+    case io_lib:deep_char_list(Reason) of
+        true  -> Reason;
+        false -> rabbit_misc:format("~p", [Reason])
+    end.
 
 log_hard_error(#v1{connection_state = CS,
                    connection = #connection{
