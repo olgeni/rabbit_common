@@ -11,11 +11,20 @@
 %% The Original Code is RabbitMQ.
 %%
 %% The Initial Developer of the Original Code is Pivotal Software, Inc.
-%% Copyright (c) 2007-2015 Pivotal Software, Inc.  All rights reserved.
+%% Copyright (c) 2016 Pivotal Software, Inc.  All rights reserved.
 %%
 
--include("rabbit.hrl").
-
--type(msg() :: any()).
-
--record(msg_location, {msg_id, ref_count, file, offset, total_size}).
+%% Old builtin types found in ERlang R16B03.
+-ifdef(use_old_builtin_types).
+-define(ARRAY_TYPE, array).
+-define(DICT_TYPE, dict).
+-define(GB_SET_TYPE, gb_set).
+-define(QUEUE_TYPE, queue).
+-define(SET_TYPE, set).
+-else.
+-define(ARRAY_TYPE, array:array).
+-define(DICT_TYPE, dict:dict).
+-define(GB_SET_TYPE, gb_sets:set).
+-define(QUEUE_TYPE, queue:queue).
+-define(SET_TYPE, sets:set).
+-endif.

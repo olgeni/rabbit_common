@@ -36,25 +36,24 @@
 
 
 %% Various types
--ifdef(use_specs).
 -export_type([amqp_field_type/0, amqp_property_type/0,
               amqp_table/0, amqp_array/0, amqp_value/0,
               amqp_method_name/0, amqp_method/0, amqp_method_record/0,
               amqp_method_field_name/0, amqp_property_record/0,
               amqp_exception/0, amqp_exception_code/0, amqp_class_id/0]).
 
--type(amqp_field_type() ::
+-type amqp_field_type() ::
       'longstr' | 'signedint' | 'decimal' | 'timestamp' |
       'unsignedbyte' | 'unsignedshort' | 'unsignedint' |
       'table' | 'byte' | 'double' | 'float' | 'long' |
-      'short' | 'bool' | 'binary' | 'void' | 'array').
--type(amqp_property_type() ::
+      'short' | 'bool' | 'binary' | 'void' | 'array'.
+-type amqp_property_type() ::
       'shortstr' | 'longstr' | 'octet' | 'short' | 'long' |
-      'longlong' | 'timestamp' | 'bit' | 'table').
+      'longlong' | 'timestamp' | 'bit' | 'table'.
 
--type(amqp_table() :: [{binary(), amqp_field_type(), amqp_value()}]).
--type(amqp_array() :: [{amqp_field_type(), amqp_value()}]).
--type(amqp_value() :: binary() |    % longstr
+-type amqp_table() :: [{binary(), amqp_field_type(), amqp_value()}].
+-type amqp_array() :: [{amqp_field_type(), amqp_value()}].
+-type amqp_value() :: binary() |    % longstr
                       integer() |   % signedint
                       {non_neg_integer(), non_neg_integer()} | % decimal
                       amqp_table() |
@@ -66,10 +65,9 @@
                       boolean() |   % bool
                       binary() |    % binary
                       'undefined' | % void
-                      non_neg_integer() % timestamp
-     ).
+                      non_neg_integer(). % timestamp
 
--type(amqp_method_name() ::
+-type amqp_method_name() ::
        ( 'connection.start' | 'connection.start_ok' | 'connection.secure' | 'connection.secure_ok'
        | 'connection.tune' | 'connection.tune_ok' | 'connection.open' | 'connection.open_ok'
        | 'connection.redirect' | 'connection.close' | 'connection.close_ok' | 'channel.open'
@@ -93,8 +91,8 @@
        | 'dtx.select' | 'dtx.select_ok' | 'dtx.start' | 'dtx.start_ok'
        | 'tunnel.request' | 'test.integer' | 'test.integer_ok' | 'test.string'
        | 'test.string_ok' | 'test.table' | 'test.table_ok' | 'test.content'
-       | 'test.content_ok' )).
--type(amqp_method() ::
+       | 'test.content_ok' ).
+-type amqp_method() ::
        ( {10, 10} | {10, 11} | {10, 20} | {10, 21} | {10, 30} | {10, 31}
        | {10, 40} | {10, 41} | {10, 50} | {10, 60} | {10, 61} | {20, 10}
        | {20, 11} | {20, 20} | {20, 21} | {20, 30} | {20, 40} | {20, 41}
@@ -110,8 +108,8 @@
        | {80, 50} | {80, 60} | {90, 10} | {90, 11} | {90, 20} | {90, 21}
        | {90, 30} | {90, 31} | {100, 10} | {100, 11} | {100, 20} | {100, 21}
        | {110, 10} | {120, 10} | {120, 11} | {120, 20} | {120, 21} | {120, 30}
-       | {120, 31} | {120, 40} | {120, 41} )).
--type(amqp_method_record() ::
+       | {120, 31} | {120, 40} | {120, 41} ).
+-type amqp_method_record() ::
        ( #'connection.start'{} | #'connection.start_ok'{} | #'connection.secure'{} | #'connection.secure_ok'{}
        | #'connection.tune'{} | #'connection.tune_ok'{} | #'connection.open'{} | #'connection.open_ok'{}
        | #'connection.redirect'{} | #'connection.close'{} | #'connection.close_ok'{} | #'channel.open'{}
@@ -135,8 +133,8 @@
        | #'dtx.select'{} | #'dtx.select_ok'{} | #'dtx.start'{} | #'dtx.start_ok'{}
        | #'tunnel.request'{} | #'test.integer'{} | #'test.integer_ok'{} | #'test.string'{}
        | #'test.string_ok'{} | #'test.table'{} | #'test.table_ok'{} | #'test.content'{}
-       | #'test.content_ok'{} )).
--type(amqp_method_field_name() ::
+       | #'test.content_ok'{} ).
+-type amqp_method_field_name() ::
        ( active | arguments | auto_delete | capabilities
        | challenge | channel_max | class_id | client_properties
        | cluster_id | consume_rate | consumer_count | consumer_tag
@@ -156,12 +154,12 @@
        | server_properties | staged_size | string_1 | string_2
        | string_op | string_result | table | ticket
        | type | version_major | version_minor | virtual_host
-       | write )).
--type(amqp_property_record() ::
+       | write ).
+-type amqp_property_record() ::
        ( #'P_connection'{} | #'P_channel'{} | #'P_access'{} | #'P_exchange'{}
        | #'P_queue'{} | #'P_basic'{} | #'P_file'{} | #'P_stream'{}
-       | #'P_tx'{} | #'P_dtx'{} | #'P_tunnel'{} | #'P_test'{} )).
--type(amqp_exception() ::
+       | #'P_tx'{} | #'P_dtx'{} | #'P_tunnel'{} | #'P_test'{} ).
+-type amqp_exception() ::
        ( 'frame_method' | 'frame_header' | 'frame_body' | 'frame_oob_method'
        | 'frame_oob_header' | 'frame_oob_body' | 'frame_trace' | 'frame_heartbeat'
        | 'frame_min_size' | 'frame_end' | 'reply_success' | 'not_delivered'
@@ -169,8 +167,8 @@
        | 'not_found' | 'resource_locked' | 'precondition_failed' | 'connection_forced'
        | 'invalid_path' | 'frame_error' | 'syntax_error' | 'command_invalid'
        | 'channel_error' | 'unexpected_frame' | 'resource_error' | 'not_allowed'
-       | 'not_implemented' | 'internal_error' )).
--type(amqp_exception_code() ::
+       | 'not_implemented' | 'internal_error' ).
+-type amqp_exception_code() ::
        ( 1 | 2 | 3 | 4
        | 5 | 6 | 7 | 8
        | 4096 | 206 | 200 | 310
@@ -178,35 +176,33 @@
        | 404 | 405 | 406 | 320
        | 402 | 501 | 502 | 503
        | 504 | 505 | 506 | 530
-       | 540 | 541 )).
--type(amqp_class_id() ::
+       | 540 | 541 ).
+-type amqp_class_id() ::
        ( 100 | 70 | 40 | 10
        | 110 | 80 | 50 | 20
-       | 120 | 90 | 60 | 30 )).
--type(amqp_class_name() ::
+       | 120 | 90 | 60 | 30 ).
+-type amqp_class_name() ::
        ( 'connection' | 'channel' | 'access' | 'exchange'
        | 'queue' | 'basic' | 'file' | 'stream'
-       | 'tx' | 'dtx' | 'tunnel' | 'test' )).
--endif. % use_specs
+       | 'tx' | 'dtx' | 'tunnel' | 'test' ).
 
 %% Method signatures
--ifdef(use_specs).
--spec(version/0 :: () -> {non_neg_integer(), non_neg_integer(), non_neg_integer()}).
--spec(lookup_method_name/1 :: (amqp_method()) -> amqp_method_name()).
--spec(lookup_class_name/1 :: (amqp_class_id()) -> amqp_class_name()).
--spec(method_id/1 :: (amqp_method_name()) -> amqp_method()).
--spec(method_has_content/1 :: (amqp_method_name()) -> boolean()).
--spec(is_method_synchronous/1 :: (amqp_method_record()) -> boolean()).
--spec(method_record/1 :: (amqp_method_name()) -> amqp_method_record()).
--spec(method_fieldnames/1 :: (amqp_method_name()) -> [amqp_method_field_name()]).
--spec(decode_method_fields/2 ::
-        (amqp_method_name(), binary()) -> amqp_method_record() | rabbit_types:connection_exit()).
--spec(decode_properties/2 :: (non_neg_integer(), binary()) -> amqp_property_record()).
--spec(encode_method_fields/1 :: (amqp_method_record()) -> binary()).
--spec(encode_properties/1 :: (amqp_property_record()) -> binary()).
--spec(lookup_amqp_exception/1 :: (amqp_exception()) -> {boolean(), amqp_exception_code(), binary()}).
--spec(amqp_exception/1 :: (amqp_exception_code()) -> amqp_exception()).
--endif. % use_specs
+-spec version() -> {non_neg_integer(), non_neg_integer(), non_neg_integer()}.
+-spec lookup_method_name(amqp_method()) -> amqp_method_name().
+-spec lookup_class_name(amqp_class_id()) -> amqp_class_name().
+-spec method_id(amqp_method_name()) -> amqp_method().
+-spec method_has_content(amqp_method_name()) -> boolean().
+-spec is_method_synchronous(amqp_method_record()) -> boolean().
+-spec method_record(amqp_method_name()) -> amqp_method_record().
+-spec method_fieldnames(amqp_method_name()) -> [amqp_method_field_name()].
+-spec decode_method_fields(amqp_method_name(), binary()) ->
+          amqp_method_record() | rabbit_types:connection_exit().
+-spec decode_properties(non_neg_integer(), binary()) -> amqp_property_record().
+-spec encode_method_fields(amqp_method_record()) -> binary().
+-spec encode_properties(amqp_property_record()) -> binary().
+-spec lookup_amqp_exception(amqp_exception()) ->
+          {boolean(), amqp_exception_code(), binary()}.
+-spec amqp_exception(amqp_exception_code()) -> amqp_exception().
 
 bitvalue(true) -> 1;
 bitvalue(false) -> 0;

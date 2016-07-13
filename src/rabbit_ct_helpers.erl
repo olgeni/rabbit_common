@@ -29,11 +29,13 @@
     config_to_testcase_name/2,
     testcases/1,
     testcase_number/3,
+    testcase_absname/2, testcase_absname/3,
     testcase_started/2, testcase_finished/2,
     exec/1, exec/2,
     make/3,
     get_config/2, set_config/2,
-    merge_app_env/2, merge_app_env_in_erlconf/2
+    merge_app_env/2, merge_app_env_in_erlconf/2,
+    cover_work_factor/2
   ]).
 
 -define(SSL_CERT_PASSWORD, "test").
@@ -44,7 +46,7 @@
 
 log_environment() ->
     Vars = lists:sort(fun(A, B) -> A =< B end, os:getenv()),
-    ct:pal("Environment variables:~n~s", [
+    ct:pal(?LOW_IMPORTANCE, "Environment variables:~n~s", [
         [io_lib:format("  ~s~n", [V]) || V <- Vars]]).
 
 run_setup_steps(Config) ->
@@ -52,10 +54,12 @@ run_setup_steps(Config) ->
 
 run_setup_steps(Config, ExtraSteps) ->
     Steps = [
+      fun ensure_current_srcdir/1,
       fun ensure_rabbit_common_srcdir/1,
       fun ensure_erlang_mk_depsdir/1,
       fun ensure_rabbit_srcdir/1,
       fun ensure_make_cmd/1,
+      fun ensure_erl_call_cmd/1,
       fun ensure_rabbitmqctl_cmd/1,
       fun ensure_ssl_certs/1,
       fun start_long_running_testsuite_monitor/1
@@ -78,6 +82,20 @@ run_steps(Config, [Step | Rest]) ->
     end;
 run_steps(Config, []) ->
     Config.
+
+ensure_current_srcdir(Config) ->
+    Path = case get_config(Config, current_srcdir) of
+        undefined ->
+            os:getenv("PWD");
+        P ->
+            P
+    end,
+    case filelib:is_dir(Path) of
+        true  -> set_config(Config, {current_srcdir, Path});
+        false -> {skip,
+                  "Current source directory required, " ++
+                  "please set 'current_srcdir' in ct config"}
+    end.
 
 ensure_rabbit_common_srcdir(Config) ->
     Path = case get_config(Config, rabbit_common_srcdir) of
@@ -167,6 +185,24 @@ ensure_make_cmd(Config) ->
                     "please set MAKE or 'make_cmd' in ct config"}
     end.
 
+ensure_erl_call_cmd(Config) ->
+    ErlCall = case get_config(Config, erl_call_cmd) of
+        undefined ->
+            case os:getenv("ERL_CALL") of
+                false -> "erl_call";
+                M     -> M
+            end;
+        M ->
+            M
+    end,
+    Cmd = [ErlCall],
+    case exec(Cmd, [{match_stdout, "Usage: "}]) of
+        {ok, _} -> set_config(Config, {erl_call_cmd, ErlCall});
+        _       -> {skip,
+                    "erl_call required, " ++
+                    "please set ERL_CALL or 'erl_call_cmd' in ct config"}
+    end.
+
 ensure_rabbitmqctl_cmd(Config) ->
     Rabbitmqctl = case get_config(Config, rabbitmqctl_cmd) of
         undefined ->
@@ -253,7 +289,7 @@ long_running_testsuite_monitor(TimerRef, Testcases) ->
             long_running_testsuite_monitor(TimerRef, Testcases1);
         ping_ct ->
             T1 = time_compat:monotonic_time(seconds),
-            ct:pal("Testcases still in progress:~s",
+            ct:pal(?STD_IMPORTANCE, "Testcases still in progress:~s",
               [[
                   begin
                       TDiff = format_time_diff(T1, T0),
@@ -285,20 +321,34 @@ testcase_finished(Config, Testcase) ->
     Config.
 
 config_to_testcase_name(Config, Testcase) ->
+    testcase_absname(Config, Testcase).
+
+testcase_absname(Config, Testcase) ->
+    testcase_absname(Config, Testcase, "/").
+
+testcase_absname(Config, Testcase, Sep) ->
     Name = rabbit_misc:format("~s", [Testcase]),
     case get_config(Config, tc_group_properties) of
         [] ->
             Name;
         Props ->
-            Name1 = rabbit_misc:format("~s/~s",
-              [proplists:get_value(name, Props), Name]),
-            config_to_testcase_name1(Name1, get_config(Config, tc_group_path))
+            Name1 = case Name of
+                "" ->
+                    rabbit_misc:format("~s",
+                      [proplists:get_value(name, Props)]);
+                _ ->
+                    rabbit_misc:format("~s~s~s",
+                      [proplists:get_value(name, Props), Sep, Name])
+            end,
+            testcase_absname1(Name1,
+              get_config(Config, tc_group_path), Sep)
     end.
 
-config_to_testcase_name1(Name, [Props | Rest]) ->
-    Name1 = rabbit_misc:format("~s/~s", [proplists:get_value(name, Props), Name]),
-    config_to_testcase_name1(Name1, Rest);
-config_to_testcase_name1(Name, []) ->
+testcase_absname1(Name, [Props | Rest], Sep) ->
+    Name1 = rabbit_misc:format("~s~s~s",
+      [proplists:get_value(name, Props), Sep, Name]),
+    testcase_absname1(Name1, Rest, Sep);
+testcase_absname1(Name, [], _) ->
     lists:flatten(Name).
 
 testcases(Testsuite) ->
@@ -385,7 +435,7 @@ exec([Cmd | Args], Options) when is_list(Cmd) orelse is_binary(Cmd) ->
                 "~n")
             }
     end,
-    ct:pal(Log1, [string:join([Cmd1 | Args1], " "), self()]),
+    ct:pal(?LOW_IMPORTANCE, Log1, [string:join([Cmd1 | Args1], " "), self()]),
     Port = erlang:open_port(
       {spawn_executable, Cmd1}, [
         {args, Args1},
@@ -409,9 +459,11 @@ port_receive_loop(Port, Stdout, Options) ->
               Stdout =:= "",
             if
                 DropStdout ->
-                    ct:pal("Exit code: ~p (pid ~p)", [X, self()]);
+                    ct:pal(?LOW_IMPORTANCE, "Exit code: ~p (pid ~p)",
+                      [X, self()]);
                 true ->
-                    ct:pal("~s~nExit code: ~p (pid ~p)", [Stdout, X, self()])
+                    ct:pal(?LOW_IMPORTANCE, "~s~nExit code: ~p (pid ~p)",
+                      [Stdout, X, self()])
             end,
             case proplists:get_value(match_stdout, Options) of
                 undefined ->
@@ -469,3 +521,11 @@ merge_app_env_in_erlconf(ErlangConfig, [Env | Rest]) ->
     merge_app_env_in_erlconf(ErlangConfig1, Rest);
 merge_app_env_in_erlconf(ErlangConfig, []) ->
     ErlangConfig.
+
+%% -------------------------------------------------------------------
+%% Cover-related functions.
+%% -------------------------------------------------------------------
+
+%% TODO.
+cover_work_factor(_Config, Without) ->
+    Without.

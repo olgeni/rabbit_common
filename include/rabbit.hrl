@@ -14,6 +14,8 @@
 %% Copyright (c) 2007-2015 Pivotal Software, Inc.  All rights reserved.
 %%
 
+-include("old_builtin_types.hrl").
+
 %% Passed around most places
 -record(user, {username,
                tags,
@@ -144,6 +146,8 @@
 -define(EMPTY_FRAME_SIZE, 8).
 
 -define(MAX_WAIT, 16#ffffffff).
+-define(SUPERVISOR_WAIT, infinity).
+-define(WORKER_WAIT, 30000).
 
 -define(HIBERNATE_AFTER_MIN,        1000).
 -define(DESIRED_HIBERNATE,         10000).
