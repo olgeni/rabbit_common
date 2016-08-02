@@ -70,13 +70,14 @@
 -export([interval_operation/5]).
 -export([ensure_timer/4, stop_timer/2, send_after/3, cancel_timer/1]).
 -export([get_parent/0]).
--export([store_proc_name/1, store_proc_name/2]).
+-export([store_proc_name/1, store_proc_name/2, get_proc_name/0]).
 -export([moving_average/4]).
 -export([get_env/3]).
 -export([get_channel_operation_timeout/0]).
 -export([random/1]).
 -export([rpc_call/4, rpc_call/5, rpc_call/7]).
 -export([report_default_thread_pool_size/0]).
+-export([get_gc_info/1]).
 
 %% Horrible macro to use in guards
 -define(IS_BENIGN_EXIT(R),
@@ -255,6 +256,7 @@
 -spec get_parent() -> pid().
 -spec store_proc_name(atom(), rabbit_types:proc_name()) -> ok.
 -spec store_proc_name(rabbit_types:proc_type_and_name()) -> ok.
+-spec get_proc_name() -> rabbit_types:proc_name().
 -spec moving_average(float(), float(), float(), float() | 'undefined') ->
           float().
 -spec get_env(atom(), atom(), term())  -> term().
@@ -265,6 +267,7 @@
 -spec rpc_call
         (node(), atom(), atom(), [any()], reference(), pid(), number()) -> any().
 -spec report_default_thread_pool_size() -> 'ok'.
+-spec get_gc_info(pid()) -> integer().
 
 %%----------------------------------------------------------------------------
 
@@ -1122,6 +1125,14 @@ cancel_timer({timer, Ref})  -> {ok, cancel} = timer:cancel(Ref),
 store_proc_name(Type, ProcName) -> store_proc_name({Type, ProcName}).
 store_proc_name(TypeProcName)   -> put(process_name, TypeProcName).
 
+get_proc_name() ->
+    case get(process_name) of
+        undefined ->
+            undefined;
+        {_Type, Name} ->
+            {ok, Name}
+    end.
+
 %% application:get_env/3 is only available in R16B01 or later.
 get_env(Application, Key, Def) ->
     case application:get_env(Application, Key) of
@@ -1193,6 +1204,18 @@ report_default_thread_pool_size() ->
     io:format("~b", [guess_default_thread_pool_size()]),
     erlang:halt(0),
     ok.
+
+get_gc_info(Pid) ->
+    {garbage_collection, GC} = erlang:process_info(Pid, garbage_collection),
+    case proplists:get_value(max_heap_size, GC) of
+        I when is_integer(I) ->
+            GC;
+        undefined ->
+            GC;
+        Map ->
+            lists:keyreplace(max_heap_size, 1, GC,
+                             {max_heap_size, maps:get(size, Map)})
+    end.
 
 %% -------------------------------------------------------------------------
 %% Begin copypasta from gen_server2.erl
