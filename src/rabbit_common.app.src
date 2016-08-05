@@ -2,12 +2,13 @@
 
 {application, rabbit_common, [
 	{description, ""},
-	{vsn, "3.6.4"},
+	{vsn, "3.6.5"},
 	{id, "git"},
 	{modules, []},
 	{registered, []},
 	{applications, [
 		kernel,
-		stdlib
+                stdlib,
+                xmerl
 	]}
 ]}.
