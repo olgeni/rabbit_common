@@ -25,7 +25,7 @@
          check_exclusive_access/2, with_exclusive_access_or_die/3,
          stat/1, deliver/2, requeue/3, ack/3, reject/4]).
 -export([list/0, list/1, info_keys/0, info/1, info/2, info_all/1, info_all/2,
-         info_all/6, info_local/1]).
+         info_all/5, info_local/1]).
 -export([list_down/1]).
 -export([force_event_refresh/1, notify_policy_changed/1]).
 -export([consumers/1, consumers_all/1,  consumers_all/3, consumer_info_keys/0]).
@@ -34,8 +34,7 @@
 -export([notify_down_all/2, notify_down_all/3, activate_limit_all/2, credit/5]).
 -export([on_node_up/1, on_node_down/1]).
 -export([update/2, store_queue/1, update_decorators/1, policy_changed/2]).
--export([start_mirroring/1, stop_mirroring/1, sync_mirrors/1,
-         cancel_sync_mirrors/1]).
+-export([update_mirroring/1, sync_mirrors/1, cancel_sync_mirrors/1, is_mirrored/1]).
 
 -export([pid_of/1, pid_of/2]).
 
@@ -117,8 +116,9 @@
 -spec info_all(rabbit_types:vhost()) -> [rabbit_types:infos()].
 -spec info_all(rabbit_types:vhost(), rabbit_types:info_keys()) ->
           [rabbit_types:infos()].
+-type info_all_filter() :: 'all' | 'online' | 'offline' | 'local'.
 -spec info_all
-        (rabbit_types:vhost(), rabbit_types:info_keys(), boolean(), boolean(),
+        (rabbit_types:vhost(), rabbit_types:info_keys(), info_all_filter(),
          reference(), pid()) ->
             'ok'.
 -spec force_event_refresh(reference()) -> 'ok'.
@@ -194,12 +194,12 @@
 -spec update_decorators(name()) -> 'ok'.
 -spec policy_changed(rabbit_types:amqqueue(), rabbit_types:amqqueue()) ->
           'ok'.
--spec start_mirroring(pid()) -> 'ok'.
--spec stop_mirroring(pid()) -> 'ok'.
+-spec update_mirroring(pid()) -> 'ok'.
 -spec sync_mirrors(rabbit_types:amqqueue() | pid()) ->
           'ok' | rabbit_types:error('not_mirrored').
 -spec cancel_sync_mirrors(rabbit_types:amqqueue() | pid()) ->
           'ok' | {'ok', 'not_syncing'}.
+-spec is_mirrored(rabbit_types:amqqueue()) -> boolean().
 
 -spec pid_of(rabbit_types:amqqueue()) ->
           {'ok', pid()} | rabbit_types:error('not_found').
@@ -265,8 +265,13 @@ find_durable_queues() ->
               qlc:e(qlc:q([Q || Q = #amqqueue{name = Name,
                                               pid  = Pid}
                                     <- mnesia:table(rabbit_durable_queue),
-                                node(Pid) == Node,
-                                mnesia:read(rabbit_queue, Name, read) =:= []]))
+                                node(Pid) == Node andalso
+				%% Terminations on node down will not remove the rabbit_queue
+				%% record if it is a mirrored queue (such info is now obtained from
+				%% the policy). Thus, we must check if the local pid is alive
+				%% - if the record is present - in order to restart.
+						    (mnesia:read(rabbit_queue, Name, read) =:= []
+						     orelse not erlang:is_process_alive(Pid))]))
       end).
 
 recover_durable_queues(QueuesAndRecoveryTerms) ->
@@ -298,7 +303,8 @@ declare(QueueName, Durable, AutoDelete, Args, Owner, Node) ->
                                       sync_slave_pids    = [],
                                       recoverable_slaves = [],
                                       gm_pids            = [],
-                                      state              = live})),
+                                      state              = live,
+                                      policy_version     = 0 })),
 
     Node1 = case rabbit_queue_master_location_misc:get_location(Q)  of
               {ok, Node0}  -> Node0;
@@ -627,15 +633,28 @@ info_all(VHostPath, Items) ->
     map(list(VHostPath), fun (Q) -> info(Q, Items) end) ++
         map(list_down(VHostPath), fun (Q) -> info_down(Q, Items, down) end).
 
-info_all(VHostPath, Items, NeedOnline, NeedOffline, Ref, AggregatorPid) ->
-    NeedOnline andalso rabbit_control_misc:emitting_map_with_exit_handler(
-                         AggregatorPid, Ref, fun(Q) -> info(Q, Items) end, list(VHostPath),
-                         continue),
-    NeedOffline andalso rabbit_control_misc:emitting_map_with_exit_handler(
-                          AggregatorPid, Ref, fun(Q) -> info_down(Q, Items, down) end,
-                          list_down(VHostPath),
-                          continue),
-    %% Previous maps are incomplete, finalize emission
+info_all_partial_emit(VHostPath, Items, all, Ref, AggregatorPid) ->
+    info_all_partial_emit(VHostPath, Items, online, Ref, AggregatorPid),
+    info_all_partial_emit(VHostPath, Items, offline, Ref, AggregatorPid);
+info_all_partial_emit(VHostPath, Items, online, Ref, AggregatorPid) ->
+    rabbit_control_misc:emitting_map_with_exit_handler(
+      AggregatorPid, Ref, fun(Q) -> info(Q, Items) end,
+      list(VHostPath),
+      continue);
+info_all_partial_emit(VHostPath, Items, offline, Ref, AggregatorPid) ->
+    rabbit_control_misc:emitting_map_with_exit_handler(
+      AggregatorPid, Ref, fun(Q) -> info_down(Q, Items, down) end,
+      list_down(VHostPath),
+      continue);
+info_all_partial_emit(VHostPath, Items, local, Ref, AggregatorPid) ->
+    rabbit_control_misc:emitting_map_with_exit_handler(
+      AggregatorPid, Ref, fun(Q) -> info(Q, Items) end,
+      list_local(VHostPath),
+      continue).
+
+info_all(VHostPath, Items, Filter, Ref, AggregatorPid) ->
+    info_all_partial_emit(VHostPath, Items, Filter, Ref, AggregatorPid),
+    %% Previous map(s) are incomplete, finalize emission
     rabbit_control_misc:emitting_map(AggregatorPid, Ref, fun(_) -> no_op end, []).
 
 info_local(VHostPath) ->
@@ -862,13 +881,15 @@ set_ram_duration_target(QPid, Duration) ->
 set_maximum_since_use(QPid, Age) ->
     gen_server2:cast(QPid, {set_maximum_since_use, Age}).
 
-start_mirroring(QPid) -> ok = delegate:cast(QPid, start_mirroring).
-stop_mirroring(QPid)  -> ok = delegate:cast(QPid, stop_mirroring).
+update_mirroring(QPid) -> ok = delegate:cast(QPid, update_mirroring).
 
 sync_mirrors(#amqqueue{pid = QPid}) -> delegate:call(QPid, sync_mirrors);
 sync_mirrors(QPid)                  -> delegate:call(QPid, sync_mirrors).
 cancel_sync_mirrors(#amqqueue{pid = QPid}) -> delegate:call(QPid, cancel_sync_mirrors);
 cancel_sync_mirrors(QPid)                  -> delegate:call(QPid, cancel_sync_mirrors).
+
+is_mirrored(Q) ->
+    rabbit_mirror_queue_misc:is_mirrored(Q).
 
 on_node_up(Node) ->
     ok = rabbit_misc:execute_mnesia_transaction(
@@ -914,11 +935,11 @@ on_node_down(Node) ->
     rabbit_misc:execute_mnesia_tx_with_tail(
       fun () -> QsDels =
                     qlc:e(qlc:q([{QName, delete_queue(QName)} ||
-                                    #amqqueue{name = QName, pid = Pid,
-                                              slave_pids = []}
+                                    #amqqueue{name = QName, pid = Pid} = Q
                                         <- mnesia:table(rabbit_queue),
-                                    node(Pid) == Node andalso
-                                    not rabbit_mnesia:is_process_alive(Pid)])),
+				    not rabbit_amqqueue:is_mirrored(Q) andalso
+					node(Pid) == Node andalso
+					not rabbit_mnesia:is_process_alive(Pid)])),
                 {Qs, Dels} = lists:unzip(QsDels),
                 T = rabbit_binding:process_deletions(
                       lists:foldl(fun rabbit_binding:combine_deletions/2,
