@@ -26,7 +26,8 @@
 -export([add_user/2, delete_user/1, lookup_user/1,
          change_password/2, clear_password/1,
          hash_password/2, change_password_hash/2, change_password_hash/3,
-         set_tags/2, set_permissions/5, clear_permissions/2]).
+         set_tags/2, set_permissions/5, clear_permissions/2,
+         add_user_sans_validation/2]).
 -export([user_info_keys/0, perms_info_keys/0,
          user_perms_info_keys/0, vhost_perms_info_keys/0,
          user_vhost_perms_info_keys/0,
@@ -42,7 +43,7 @@
 
 -type regexp() :: binary().
 
--spec add_user(rabbit_types:username(), rabbit_types:password()) -> 'ok'.
+-spec add_user(rabbit_types:username(), rabbit_types:password()) -> 'ok' | {'error', string()}.
 -spec delete_user(rabbit_types:username()) -> 'ok'.
 -spec lookup_user
         (rabbit_types:username()) ->
@@ -165,7 +166,22 @@ permission_index(read)      -> #permission.read.
 %%----------------------------------------------------------------------------
 %% Manipulation of the user database
 
+validate_credentials(Username, Password) ->
+    rabbit_credential_validation:validate(Username, Password).
+
+validate_and_alternate_credentials(Username, Password, Fun) ->
+    case validate_credentials(Username, Password) of
+        ok           ->
+            Fun(Username, Password);
+        {error, Err} ->
+            rabbit_log:error("Credential validation for '~s' failed!~n", [Username]),
+            {error, Err}
+    end.
+
 add_user(Username, Password) ->
+    validate_and_alternate_credentials(Username, Password, fun add_user_sans_validation/2).
+
+add_user_sans_validation(Username, Password) ->
     rabbit_log:info("Creating user '~s'~n", [Username]),
     %% hash_password will pick the hashing function configured for us
     %% but we also need to store a hint as part of the record, so we
@@ -212,6 +228,9 @@ lookup_user(Username) ->
     rabbit_misc:dirty_read({rabbit_user, Username}).
 
 change_password(Username, Password) ->
+    validate_and_alternate_credentials(Username, Password, fun change_password_sans_validation/2).
+
+change_password_sans_validation(Username, Password) ->
     rabbit_log:info("Changing password for '~s'~n", [Username]),
     HashingAlgorithm = rabbit_password:hashing_mod(),
     R = change_password_hash(Username,

@@ -56,7 +56,7 @@
 -export([const/1]).
 -export([ntoa/1, ntoab/1]).
 -export([is_process_alive/1]).
--export([pget/2, pget/3, pget_or_die/2, pmerge/3, pset/3, plmerge/2]).
+-export([pget/2, pget/3, pupdate/3, pget_or_die/2, pmerge/3, pset/3, plmerge/2]).
 -export([format_message_queue/2]).
 -export([append_rpc_all_nodes/4]).
 -export([os_cmd/1]).
@@ -72,12 +72,13 @@
 -export([get_parent/0]).
 -export([store_proc_name/1, store_proc_name/2, get_proc_name/0]).
 -export([moving_average/4]).
--export([get_env/3]).
+-export([get_env/3, lists_droplast/1]).
 -export([get_channel_operation_timeout/0]).
 -export([random/1]).
 -export([rpc_call/4, rpc_call/5, rpc_call/7]).
 -export([report_default_thread_pool_size/0]).
 -export([get_gc_info/1]).
+-export([group_proplists_by/2]).
 
 %% Horrible macro to use in guards
 -define(IS_BENIGN_EXIT(R),
@@ -268,6 +269,9 @@
         (node(), atom(), atom(), [any()], reference(), pid(), number()) -> any().
 -spec report_default_thread_pool_size() -> 'ok'.
 -spec get_gc_info(pid()) -> integer().
+-spec group_proplists_by(fun((proplists:proplist()) -> any()),
+                         list(proplists:proplist())) -> list(list(proplists:proplist())).
+
 
 %%----------------------------------------------------------------------------
 
@@ -795,15 +799,13 @@ gb_trees_foreach(Fun, Tree) ->
     gb_trees_fold(fun (Key, Val, Acc) -> Fun(Key, Val), Acc end, ok, Tree).
 
 module_attributes(Module) ->
-    case catch Module:module_info(attributes) of
-        {'EXIT', {undef, [{Module, module_info, _} | _]}} ->
+    try
+        Module:module_info(attributes)
+    catch
+        _:undef ->
             io:format("WARNING: module ~p not found, so not scanned for boot steps.~n",
                       [Module]),
-            [];
-        {'EXIT', Reason} ->
-            exit(Reason);
-        V ->
-            V
+            []
     end.
 
 all_module_attributes(Name) ->
@@ -864,6 +866,8 @@ ntoab(IP) ->
 %% See also rabbit_mnesia:is_process_alive/1 which also requires the
 %% process be in the same running cluster as us (i.e. not partitioned
 %% or some random node).
+is_process_alive(Pid) when node(Pid) =:= node() ->
+    erlang:is_process_alive(Pid);
 is_process_alive(Pid) ->
     Node = node(Pid),
     lists:member(Node, [node() | nodes()]) andalso
@@ -890,7 +894,15 @@ pget_or_die(K, P) ->
         V         -> V
     end.
 
-%% property merge 
+pupdate(K, UpdateFun, P) ->
+    case lists:keyfind(K, 1, P) of
+        {K, V} ->
+            pset(K, UpdateFun(V), P);
+        _ ->
+            undefined
+    end.
+
+%% property merge
 pmerge(Key, Val, List) ->
       case proplists:is_defined(Key, List) of
               true -> List;
@@ -900,10 +912,17 @@ pmerge(Key, Val, List) ->
 %% proplists merge
 plmerge(P1, P2) ->
     dict:to_list(dict:merge(fun(_, V, _) ->
-                                V 
-                            end, 
-                            dict:from_list(P1), 
+                                V
+                            end,
+                            dict:from_list(P1),
                             dict:from_list(P2))).
+
+%% groups a list of proplists by a key function
+group_proplists_by(KeyFun, ListOfPropLists) ->
+    Res = lists:foldl(fun(P, Agg) ->
+                        dict:update(KeyFun(P), fun (O) -> [P|O] end, [P], Agg)
+                      end, dict:new(), ListOfPropLists),
+    [ X || {_, X} <- dict:to_list(Res)].
 
 pset(Key, Value, List) -> [{Key, Value} | proplists:delete(Key, List)].
 
@@ -1126,6 +1145,10 @@ get_env(Application, Key, Def) ->
         {ok, Val} -> Val;
         undefined -> Def
     end.
+
+%% lists:droplast/1 is only available in Erlang 17.0+.
+lists_droplast([_T])  -> [];
+lists_droplast([H|T]) -> [H|lists_droplast(T)].
 
 get_channel_operation_timeout() ->
     %% Default channel_operation_timeout set to net_ticktime + 10s to

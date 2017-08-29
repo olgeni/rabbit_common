@@ -159,6 +159,10 @@
                           send_pend, state, channels, reductions,
                           garbage_collection]).
 
+-define(SIMPLE_METRICS, [pid, recv_oct, send_oct, reductions]).
+-define(OTHER_METRICS, [recv_cnt, send_cnt, send_pend, state, channels,
+                        garbage_collection]).
+
 -define(CREATION_EVENT_KEYS,
         [pid, name, port, peer_port, host,
         peer_host, ssl, peer_cert_subject, peer_cert_issuer,
@@ -259,7 +263,7 @@ conserve_resources(Pid, Source, {_, Conserve, _}) ->
     ok.
 
 server_properties(Protocol) ->
-    {ok, Product} = application:get_key(rabbit, id),
+    {ok, Product} = application:get_key(rabbit, description),
     {ok, Version} = application:get_key(rabbit, vsn),
 
     %% Get any configuration-specified server properties
@@ -401,6 +405,7 @@ start_connection(Parent, HelperSup, Deb, Sock) ->
         %% socket w/o delay before termination.
         rabbit_net:fast_close(Sock),
         rabbit_networking:unregister_connection(self()),
+	rabbit_core_metrics:connection_closed(self()),
         rabbit_event:notify(connection_closed, [{pid, self()}])
     end,
     done.
@@ -718,10 +723,12 @@ handle_dependent_exit(ChPid, Reason, State) ->
     {Channel, State1} = channel_cleanup(ChPid, State),
     case {Channel, termination_kind(Reason)} of
         {undefined,   controlled} -> State1;
-        {undefined, uncontrolled} -> exit({abnormal_dependent_exit,
+        {undefined, uncontrolled} -> handle_uncontrolled_channel_close(ChPid),
+                                     exit({abnormal_dependent_exit,
                                            ChPid, Reason});
         {_,           controlled} -> maybe_close(control_throttle(State1));
-        {_,         uncontrolled} -> State2 = handle_exception(
+        {_,         uncontrolled} -> handle_uncontrolled_channel_close(ChPid),
+                                     State2 = handle_exception(
                                                 State1, Channel, Reason),
                                      maybe_close(control_throttle(State2))
     end.
@@ -762,6 +769,7 @@ wait_for_channel_termination(N, TimerRef,
                                "error while terminating:~n~p~n",
                         [self(), ConnName, VHost, User#user.username,
                          CS, Channel, Reason]),
+                    handle_uncontrolled_channel_close(ChPid),
                     wait_for_channel_termination(N-1, TimerRef, State1)
             end;
         {'EXIT', Sock, _Reason} ->
@@ -1194,16 +1202,17 @@ handle_method0(#'connection.tune_ok'{frame_max   = FrameMax,
              queue_collector = Collector,
              heartbeater = Heartbeater};
 
-handle_method0(#'connection.open'{virtual_host = VHostPath},
+handle_method0(#'connection.open'{virtual_host = VHost},
                State = #v1{connection_state = opening,
                            connection       = Connection = #connection{
-                                                user = User,
+                                                log_name = ConnName,
+                                                user = User = #user{username = Username},
                                                 protocol = Protocol},
                            helper_sup       = SupPid,
                            sock             = Sock,
                            throttle         = Throttle}) ->
-    ok = rabbit_access_control:check_vhost_access(User, VHostPath, Sock),
-    NewConnection = Connection#connection{vhost = VHostPath},
+    ok = rabbit_access_control:check_vhost_access(User, VHost, Sock),
+    NewConnection = Connection#connection{vhost = VHost},
     ok = send_on_channel0(Sock, #'connection.open_ok'{}, Protocol),
     Conserve = rabbit_alarm:register(self(), {?MODULE, conserve_resources, []}),
     Throttle1 = Throttle#throttle{alarmed_by = Conserve},
@@ -1214,10 +1223,13 @@ handle_method0(#'connection.open'{virtual_host = VHostPath},
                         connection          = NewConnection,
                         channel_sup_sup_pid = ChannelSupSupPid,
                         throttle            = Throttle1}),
-    rabbit_event:notify(connection_created,
-                        [{type, network} |
-                         infos(?CREATION_EVENT_KEYS, State1)]),
+    Infos = [{type, network} | infos(?CREATION_EVENT_KEYS, State1)],
+    rabbit_core_metrics:connection_created(proplists:get_value(pid, Infos),
+                                           Infos),
+    rabbit_event:notify(connection_created, Infos),
     maybe_emit_stats(State1),
+    log(info, "connection ~p (~s): user '~s' authenticated and granted access to vhost '~s'~n",
+        [self(), ConnName, Username, VHost]),
     State1;
 handle_method0(#'connection.close'{}, State) when ?IS_RUNNING(State) ->
     lists:foreach(fun rabbit_channel:shutdown/1, all_channels()),
@@ -1466,8 +1478,12 @@ maybe_emit_stats(State) ->
                             fun() -> emit_stats(State) end).
 
 emit_stats(State) ->
-    Infos = infos(?STATISTICS_KEYS, State),
-    rabbit_event:notify(connection_stats, Infos),
+    [{_, Pid}, {_, Recv_oct}, {_, Send_oct}, {_, Reductions}] = I
+	= infos(?SIMPLE_METRICS, State),
+    Infos = infos(?OTHER_METRICS, State),
+    rabbit_core_metrics:connection_stats(Pid, Infos),
+    rabbit_core_metrics:connection_stats(Pid, Recv_oct, Send_oct, Reductions),
+    rabbit_event:notify(connection_stats, Infos ++ I),
     State1 = rabbit_event:reset_stats_timer(State, #v1.stats_timer),
     ensure_stats_timer(State1).
 
@@ -1528,3 +1544,7 @@ dynamic_connection_name(Default) ->
         _ ->
             Default
     end.
+
+handle_uncontrolled_channel_close(ChPid) ->
+    rabbit_core_metrics:channel_closed(ChPid),
+    rabbit_event:notify(channel_closed, [{pid, ChPid}]).
