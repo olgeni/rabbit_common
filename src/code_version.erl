@@ -15,7 +15,7 @@
 %%
 -module(code_version).
 
--export([update/1]).
+-export([update/1, get_otp_version/0]).
 
 %%----------------------------------------------------------------------------
 %% API
@@ -53,6 +53,15 @@
 %%    ..
 %%
 %% See `time_compat.erl` for an example.
+%%
+%% CAUTION: Make sure that all functions in the module are patched this
+%% way! If you have "regular" functions, you might hit a race condition
+%% between the unload of the old module and the load of the patched
+%% module. If all functions are patched, loading will be serialized,
+%% thanks to a lock acquired by `code_version`. However, if you have
+%% regular functions, any call to them will bypass that lock and the old
+%% code will be reloaded from disk. This will kill the process trying to
+%% patch the module.
 %%
 %% end
 %%----------------------------------------------------------------------------
