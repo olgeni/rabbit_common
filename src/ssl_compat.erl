@@ -11,13 +11,13 @@
 %% The Original Code is RabbitMQ.
 %%
 %% The Initial Developer of the Original Code is GoPivotal, Inc.
-%% Copyright (c) 2007-2016 Pivotal Software, Inc.  All rights reserved.
+%% Copyright (c) 2007-2017 Pivotal Software, Inc.  All rights reserved.
 %%
 
 -module(ssl_compat).
 
-%% We don't want warnings about the use of erlang:now/0 in
-%% this module.
+%% We don't want warnings about the use of ssl:connection_info/1 in this
+%% module.
 -compile(nowarn_deprecated_function).
 
 %% Declare versioned functions to allow dynamic code loading,

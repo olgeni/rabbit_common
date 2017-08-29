@@ -11,7 +11,7 @@
 %% The Original Code is RabbitMQ.
 %%
 %% The Initial Developer of the Original Code is GoPivotal, Inc.
-%% Copyright (c) 2007-2016 Pivotal Software, Inc.  All rights reserved.
+%% Copyright (c) 2007-2017 Pivotal Software, Inc.  All rights reserved.
 %%
 
 -module(rabbit_data_coercion).
@@ -25,8 +25,9 @@ to_binary(Val) when is_atom(Val)    -> atom_to_binary(Val, utf8);
 to_binary(Val) when is_integer(Val) -> integer_to_binary(Val);
 to_binary(Val)                      -> Val.
 
--spec to_list(Val :: integer() | list() | binary()) -> list().
+-spec to_list(Val :: integer() | list() | binary() | atom()) -> list().
 to_list(Val) when is_list(Val)    -> Val;
+to_list(Val) when is_atom(Val)    -> atom_to_list(Val);
 to_list(Val) when is_binary(Val)  -> binary_to_list(Val);
 to_list(Val) when is_integer(Val) -> integer_to_list(Val).
 
