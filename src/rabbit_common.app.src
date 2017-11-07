@@ -2,7 +2,7 @@
 
 {application, rabbit_common, [
 	{description, ""},
-	{vsn, "3.6.13"},
+	{vsn, "3.6.14"},
 	{id, "git"},
 	{modules, []},
 	{registered, []},
